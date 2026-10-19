@@ -124,6 +124,7 @@ section{min-width:0}
     <h2>Attendees</h2>
     <div class="tools">
       <input type="search" id="q" placeholder="Search name or company" aria-label="Search">
+      <select id="sortby" aria-label="Sort order" style="width:auto"><option value="last">Sort: last name</option><option value="first">Sort: first name</option><option value="sheet">Sort: spreadsheet order</option></select>
       <button id="selall" type="button">Select shown</button>
       <button id="selnone" type="button">Clear shown</button>
     </div>
@@ -196,7 +197,14 @@ function loadSaved(){ try{ var raw=localStorage.getItem('badgeprinter.imgs'); if
 function saveAll(){ try{ var o={}; Object.keys(sources).forEach(function(k){ if(sources[k]==='uploaded') o[k]=imgs[k]; }); localStorage.setItem('badgeprinter.imgs',JSON.stringify(o)); }catch(e){} }
 
 /* ---------- data ---------- */
-function setRows(list){ rows=list.map(function(r,i){ r.id=i; r.sel=true; return r; }); renderAll(); if(window.loadServerImages) window.loadServerImages(); }
+var sortMode='last', collator=new Intl.Collator('en',{sensitivity:'base',numeric:true});
+function applySort(){
+  function k(r){ return sortMode==='first'?[r.first,r.last,r.company]:[r.last,r.first,r.company]; }
+  rows.sort(function(a,b){
+    if(sortMode==='sheet' || a.blank!==b.blank){ if(a.blank!==b.blank && sortMode!=='sheet') return a.blank?1:-1; return a.ord-b.ord; }
+    var x=k(a), y=k(b); for(var i=0;i<x.length;i++){ var c=collator.compare(x[i],y[i]); if(c) return c; } return a.ord-b.ord; });
+  rows.forEach(function(r,i){ r.id=i; }); }
+function setRows(list){ rows=list.map(function(r,i){ r.ord=i; r.sel=true; return r; }); applySort(); renderAll(); if(window.loadServerImages) window.loadServerImages(); }
 function exampleRows(){ return EXAMPLE.map(function(e){ return {first:e[0],last:e[1],company:e[2],mi:'',bkey:e[3],lkey:e[4]}; }); }
 function parseSheet(buf,name){
   var wb=window.XLSX.read(buf,{type:'array'}); var ws=wb.Sheets[wb.SheetNames[0]];
@@ -288,10 +296,10 @@ function renderBlankGrid(){ var h=''; blankKeys().forEach(function(k){ h+='<labe
 function addBlanks(){ var lc={}, lk='epcnyc', total=0, parts=[];
   rows.forEach(function(r){ lc[r.lkey]=(lc[r.lkey]||0)+1; }); Object.keys(lc).forEach(function(x){ if(lc[x]>(lc[lk]||0)) lk=x; });
   blankKeys().forEach(function(k){ var n=Math.max(0,Math.min(200,parseInt(blankCounts[k],10)||0)); if(!n) return;
-    for(var i=0;i<n;i++){ rows.push({id:rows.length,first:'',last:'',company:'',mi:'',bkey:k,lkey:lk,blank:true,added:true,sel:true}); }
+    for(var i=0;i<n;i++){ rows.push({id:rows.length,ord:1e9+rows.length,first:'',last:'',company:'',mi:'',bkey:k,lkey:lk,blank:true,added:true,sel:true}); }
     total+=n; parts.push(n+' '+k); blankCounts[k]=0; });
-  renderAll(); $('makestatus').textContent=total?'Added '+total+' blank badge'+(total>1?'s':'')+' at the end of the list ('+parts.join(', ')+').':'Enter a number next to a banner first.'; }
-function clearBlanks(){ var before=rows.length; rows=rows.filter(function(r){return !r.added}); rows.forEach(function(r,i){r.id=i}); renderAll();
+  applySort(); renderAll(); $('makestatus').textContent=total?'Added '+total+' blank badge'+(total>1?'s':'')+' at the end of the list ('+parts.join(', ')+').':'Enter a number next to a banner first.'; }
+function clearBlanks(){ var before=rows.length; rows=rows.filter(function(r){return !r.added}); applySort(); renderAll();
   $('makestatus').textContent=before-rows.length?'Removed '+(before-rows.length)+' added blank badge'+(before-rows.length>1?'s':'')+'.':'No added blanks to remove.'; }
 var tried={};
 function blobToUrl(b){ return new Promise(function(res,rej){ var r=new FileReader(); r.onload=function(){res(r.result)}; r.onerror=rej; r.readAsDataURL(b); }); }
@@ -385,6 +393,7 @@ function init(){
   $('imgfile').addEventListener('change',function(e){ addImages(e.target.files); e.target.value=''; });
   $('slots').addEventListener('click',function(e){ var b=e.target.closest('button'); if(!b) return; startSlot=+b.dataset.s; renderSlots(); renderSheets(); });
   $('tb').addEventListener('change',function(e){ var id=e.target.dataset.id; if(id==null) return; rows[+id].sel=e.target.checked; renderBanners(); renderSheets(); });
+  $('sortby').addEventListener('change',function(e){ sortMode=e.target.value; applySort(); renderAll(); });
   $('q').addEventListener('input',function(e){ filter=e.target.value; renderTable(); });
   function bulk(v){ var f=filter.toLowerCase(); rows.forEach(function(r){ if(!f||(r.first+' '+r.last+' '+r.company).toLowerCase().indexOf(f)>=0) r.sel=v; }); renderAll(); }
   $('selall').addEventListener('click',function(){bulk(true)}); $('selnone').addEventListener('click',function(){bulk(false)});
